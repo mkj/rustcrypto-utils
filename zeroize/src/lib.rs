@@ -424,6 +424,42 @@ where
 
 impl<Z> ZeroizeOnDrop for Option<Z> where Z: ZeroizeOnDrop {}
 
+/// Trait for securely erasing values when taken from a type
+pub trait TakeZeroize {
+    /// Performs `.take()` and zeroizes the source.
+    fn take_zeroize(&mut self) -> Self;
+}
+
+impl<T: ZeroizeOnDrop> TakeZeroize for Option<T> {
+    fn take_zeroize(&mut self) -> Self {
+        let r = self.take();
+
+        // Ensure that if the `Option` were previously `Some` but a value was copied/moved out
+        // that the remaining space in the `Option` is zeroized.
+        //
+        // Safety:
+        //
+        // The memory pointed to by `self` is valid for `mem::size_of::<Self>()` bytes.
+        // It is also properly aligned, because `u8` has an alignment of `1`.
+        unsafe {
+            volatile_set(self as *mut _ as *mut u8, 0, mem::size_of::<Self>());
+        }
+
+        // Ensures self is overwritten with the default bit pattern. volatile_write can't be
+        // used because Option<Z> is not copy.
+        //
+        // Safety:
+        //
+        // self is safe to replace with the default, which the take() call above should have
+        // already done semantically. Any value which needed to be dropped will have been
+        // done so by take().
+        unsafe { ptr::write_volatile(self, Option::default()) }
+
+        atomic_fence();
+        r
+    }
+}
+
 /// Impl [`Zeroize`] on slices of [`MaybeUninit`] types.
 ///
 /// This impl can eventually be optimized using an memset intrinsic,

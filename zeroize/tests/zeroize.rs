@@ -98,6 +98,33 @@ fn zeroize_on_drop_check_tuple() {
     assert_eq!(tup2, (ZeroizedOnDrop(0), ZeroizedOnDrop(0)));
 }
 
+#[derive(Debug)]
+struct OneOnDrop(NonZeroU64);
+
+impl Drop for OneOnDrop {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for OneOnDrop {}
+
+#[test]
+fn zeroize_take() {
+    let mut o = Some(OneOnDrop(NonZeroU64::new(123).unwrap()));
+    let t = o.take_zeroize().unwrap();
+
+    let v1: u64 = unsafe { core::mem::transmute(o) };
+    let v2: u64 = unsafe { core::mem::transmute(Option::<OneOnDrop>::None) };
+    // This is a valid comparison since there is only a single bit-pattern
+    // that could represent Option<NonZeroU64>::None, given they have the
+    // same size, equivalent representations for Some, and 0 is the only
+    // disallowed NonZeroU64 value.
+    assert_eq!(v1, v2);
+    assert_eq!(t.0, NonZeroU64::new(123).unwrap());
+}
+
+
 #[cfg(feature = "alloc")]
 #[test]
 fn zeroize_vec() {
